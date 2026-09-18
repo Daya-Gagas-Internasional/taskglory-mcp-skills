@@ -12,11 +12,11 @@ Manage skills pada TaskGlory agents — save token, list agents, install/uninsta
 ## Prerequisites
 
 - TaskGlory PAT token (format: `tgpat_xxx`) — dapat dari TaskGlory settings page
-- TaskGlory MCP server ter-config di `~/.hermes/config.yaml`
+- TaskGlory MCP server ter-config di Hermes config (`config.yaml` di Hermes home dir, biasanya `~/.hermes/`)
 
 ## Setup: Save Token
 
-Token disimpan di Hermes config (`~/.hermes/config.yaml`):
+Token disimpan di Hermes config (`config.yaml` di Hermes home dir):
 
 ```yaml
 mcp_servers:
