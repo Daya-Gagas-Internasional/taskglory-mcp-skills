@@ -1,22 +1,22 @@
 ---
 name: taskglory-skill-manager
-description: Install, manage, and configure skills on TaskGlory agents. Save PAT token, list agents, install skills via API.
+description: Install, manage, dan configure skills di TaskGlory agents. Save PAT token, list agents, install/uninstall skills via API.
 version: 1.0.0
 author: awan
 ---
 
 # TaskGlory Skill Manager
 
-Manage skills on TaskGlory agents — save token, list agents, install/uninstall skills.
+Manage skills pada TaskGlory agents — save token, list agents, install/uninstall skills.
 
 ## Prerequisites
 
-- TaskGlory PAT token (format: `tgpat_xxx`) — get from TaskGlory settings page
-- TaskGlory MCP server configured in `~/.hermes/config.yaml`
+- TaskGlory PAT token (format: `tgpat_xxx`) — dapat dari TaskGlory settings page
+- TaskGlory MCP server ter-config di `~/.hermes/config.yaml`
 
 ## Setup: Save Token
 
-Token disimpan di Hermes config (`~/.hermes/config.yaml`) under `mcp_servers.taskglory`:
+Token disimpan di Hermes config (`~/.hermes/config.yaml`):
 
 ```yaml
 mcp_servers:
@@ -26,26 +26,13 @@ mcp_servers:
       Authorization: Bearer tgpat_xxxxxxxxxxxx
 ```
 
-Kalau belum ada, edit config manual atau jalankan:
+Setelah edit config, restart Hermes.
 
-```bash
-hermes config set mcp_servers.taskglory.url https://dev.taskglory.com/api/mcp
-hermes config set mcp_servers.taskglory.headers.Authorization "Bearer tgpat_xxxxxxxxxxxx"
-```
-
-Restart Hermes setelah edit config.
-
-## Step-by-step: Install Skill ke Agent
+## Install Skill ke Agent
 
 ### Step 1: Dapatkan Workspace ID
 
-Panggil MCP tool `workspace_overview`:
-
-```
-mcp__taskglory__workspace_overview
-```
-
-Atau via terminal:
+Panggil MCP tool `workspace_overview` (lewat Hermes atau curl):
 
 ```bash
 curl -s -X POST https://dev.taskglory.com/api/mcp \
@@ -55,9 +42,9 @@ curl -s -X POST https://dev.taskglory.com/api/mcp \
   | python3 -m json.tool
 ```
 
-Response ada `workspace.id` — simpan UUID ini.
+Simpan `workspace.id` dari response.
 
-### Step 2: List Agents di Workspace
+### Step 2: List Agents
 
 ```bash
 curl -s -X GET "https://dev.taskglory.com/api/workspaces/<workspace_id>/agents" \
@@ -83,7 +70,24 @@ curl -s -X POST https://dev.taskglory.com/api/agents/skills/install \
   | python3 -m json.tool
 ```
 
-### Step 4: Verify Skills Terinstall
+Response sukses:
+```json
+{
+  "message": "Skill my-skill-name installed successfully",
+  "status": "installed",
+  "skill": {
+    "name": "my-skill-name",
+    "version": "1.0.0",
+    "description": "What this skill does",
+    "source_url": "https://github.com/owner/repo",
+    "installed_at": "2026-09-18T10:00:00",
+    "installed_by": "email@user.com"
+  },
+  "agent_display_name": "Sarah (Ibrahim Aghythara's Agent)"
+}
+```
+
+### Step 4: Verify
 
 ```bash
 curl -s -X GET "https://dev.taskglory.com/api/superadmin/agents/<agent_id>" \
@@ -91,13 +95,14 @@ curl -s -X GET "https://dev.taskglory.com/api/superadmin/agents/<agent_id>" \
   | python3 -m json.tool
 ```
 
-Cek field `skills_config` — array skill yang sudah terinstall.
+Cek field `skills_config`.
 
-## Default Skills (Auto-Install)
+## Default Skills (Auto-Install saat Agent Dibuat)
 
-Saat agent dibuat via API, otomatis terinstall:
-- `taskglory-ops` — query task/user/workspace via MCP
-- `chat-reply` — balas comment/chat/thread otomatis
+| Skill | Fungsi |
+|-------|--------|
+| `taskglory-ops` | Query task/user/workspace via MCP |
+| `chat-reply` | Balas comment/chat/thread otomatis |
 
 ## Uninstall Skill
 
@@ -109,12 +114,21 @@ curl -s -X DELETE "https://dev.taskglory.com/api/superadmin/agents/<agent_id>/sk
 ## Permission Rules
 
 - Hanya **owner agent** atau **superadmin** yang bisa install/uninstall skill
-- Hanya **owner agent** atau **superadmin** yang bisa mention/assign agent ke task
-- Agent user (`is_agent=True`) tidak bisa install skill ke dirinya sendiri
+- Hanya **owner agent** atau **superadmin** yang bisa mention/assign agent
+- Agent user tidak bisa install skill ke dirinya sendiri
+
+## Error Handling
+
+| HTTP Status | Error | Penyebab |
+|-------------|-------|----------|
+| 403 | Only agent owner or superadmin can install skills | Bukan owner agent |
+| 403 | Source URL not in allowed list | source_url tidak match tools_scope |
+| 400 | Skill already installed | Skill sudah ada |
+| 404 | Agent not found | agent_id salah |
 
 ## Agent Identity
 
-Cek siapa agent kamu lewat `workspace_overview` — response ada `agent_identity`:
+Cek identitas agent via `workspace_overview` — ada field `agent_identity`:
 
 ```json
 {
@@ -128,12 +142,12 @@ Cek siapa agent kamu lewat `workspace_overview` — response ada `agent_identity
 }
 ```
 
-## Quick Reference
+## API Quick Reference
 
 | Action | Method | Endpoint |
 |--------|--------|----------|
 | List agents | GET | `/api/workspaces/{ws_id}/agents` |
+| Agent detail | GET | `/api/superadmin/agents/{agent_id}` |
 | Install skill | POST | `/api/agents/skills/install` |
 | Uninstall skill | DELETE | `/api/superadmin/agents/{agent_id}/skills/{skill_id}` |
-| Agent detail | GET | `/api/superadmin/agents/{agent_id}` |
 | Workspace overview | MCP | `workspace_overview` tool |
