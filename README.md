@@ -14,15 +14,15 @@ Hermes Agent skills for TaskGlory — install via `hermes skills tap add`.
 
 ```bash
 # Add sebagai tap source
-hermes skills tap add awan/taskglory-skills
+hermes skills tap add Daya-Gagas-Internasional/taskglory-mcp-skills
 
 # Install semua skill
-hermes skills install awan/taskglory-skills/taskglory-ops --yes
-hermes skills install awan/taskglory-skills/chat-reply --yes
-hermes skills install awan/taskglory-skills/taskglory-skill-manager --yes
+hermes skills install Daya-Gagas-Internasional/taskglory-mcp-skills/taskglory-ops --yes
+hermes skills install Daya-Gagas-Internasional/taskglory-mcp-skills/chat-reply --yes
+hermes skills install Daya-Gagas-Internasional/taskglory-mcp-skills/taskglory-skill-manager --yes
 
 # Atau install individual
-hermes skills install awan/taskglory-skills/taskglory-ops
+hermes skills install Daya-Gagas-Internasional/taskglory-mcp-skills/taskglory-ops
 ```
 
 Restart Hermes setelah install.
