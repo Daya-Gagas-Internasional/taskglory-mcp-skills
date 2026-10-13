@@ -9,7 +9,7 @@ Usage:
 
 Environment variables:
     HERMES_BIN    — full path to hermes binary (default: tries `which hermes`, then ~/.local/bin/hermes)
-    TG_BASE_URL   — TaskGlory base URL (default: https://dev.taskglory.com)
+    TG_BASE_URL   — TaskGlory base URL (default: https://taskglory.com)
 
 Requires:
     - Hermes Agent installed, MCP taskglory configured & enabled
@@ -34,7 +34,7 @@ import select
 import fcntl
 from datetime import datetime, timezone
 
-BASE_URL = os.environ.get("TG_BASE_URL", "https://dev.taskglory.com")
+BASE_URL = os.environ.get("TG_BASE_URL", "https://taskglory.com")
 SSE_URL = f"{BASE_URL}/api/mcp/sse"
 
 TOKEN = sys.argv[1] if len(sys.argv) > 1 else None

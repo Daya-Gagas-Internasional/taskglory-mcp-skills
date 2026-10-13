@@ -75,7 +75,7 @@ Pastikan `~/.hermes/config.yaml` punya section `mcp_servers.taskglory` dengan to
 ```yaml
 mcp_servers:
   taskglory:
-    url: https://dev.taskglory.com/api/mcp
+    url: https://taskglory.com/api/mcp
     headers:
       Authorization: Bearer tgpat_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```

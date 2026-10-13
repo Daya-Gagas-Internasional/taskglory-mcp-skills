@@ -68,7 +68,7 @@ echo "[3/6] Getting TaskGlory PAT token..."
 CONFIG_FILE="$HOME/.hermes/config.yaml"
 if [ ! -f "$CONFIG_FILE" ]; then
     echo "  ERROR: $CONFIG_FILE not found. Configure MCP taskglory first:"
-    echo "    $HERMES_BIN mcp add taskglory https://dev.taskglory.com/api/mcp"
+    echo "    $HERMES_BIN mcp add taskglory https://taskglory.com/api/mcp"
     exit 1
 fi
 
@@ -217,7 +217,7 @@ echo ""
 echo "=== Setup Complete ==="
 echo ""
 echo "Listener is running. Test it:"
-echo "  1. Open TaskGlory web (dev.taskglory.com)"
+echo "  1. Open TaskGlory web (taskglory.com)"
 echo "  2. Comment on a task where the agent is assigned/mentioned"
 echo "  3. Check: tail -f $LOG_FILE"
 echo ""

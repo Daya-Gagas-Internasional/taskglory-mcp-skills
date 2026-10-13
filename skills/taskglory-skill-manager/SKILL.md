@@ -21,7 +21,7 @@ Token disimpan di Hermes config (`config.yaml` di Hermes home dir):
 ```yaml
 mcp_servers:
   taskglory:
-    url: https://dev.taskglory.com/api/mcp
+    url: https://taskglory.com/api/mcp
     headers:
       Authorization: Bearer tgpat_xxxxxxxxxxxx
 ```
@@ -35,7 +35,7 @@ Setelah edit config, restart Hermes.
 Panggil MCP tool `workspace_overview` (lewat Hermes atau curl):
 
 ```bash
-curl -s -X POST https://dev.taskglory.com/api/mcp \
+curl -s -X POST https://taskglory.com/api/mcp \
   -H "Authorization: Bearer tgpat_xxx" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"workspace_overview","arguments":{}},"id":1}' \
@@ -47,7 +47,7 @@ Simpan `workspace.id` dari response.
 ### Step 2: List Agents
 
 ```bash
-curl -s -X GET "https://dev.taskglory.com/api/workspaces/<workspace_id>/agents" \
+curl -s -X GET "https://taskglory.com/api/workspaces/<workspace_id>/agents" \
   -H "Authorization: Bearer tgpat_xxx" \
   | python3 -m json.tool
 ```
@@ -57,7 +57,7 @@ Response: array agent dengan `id`, `display_name`, `owner_name`, `skills_config`
 ### Step 3: Install Skill
 
 ```bash
-curl -s -X POST https://dev.taskglory.com/api/agents/skills/install \
+curl -s -X POST https://taskglory.com/api/agents/skills/install \
   -H "Authorization: Bearer tgpat_xxx" \
   -H "Content-Type: application/json" \
   -d '{
@@ -90,7 +90,7 @@ Response sukses:
 ### Step 4: Verify
 
 ```bash
-curl -s -X GET "https://dev.taskglory.com/api/superadmin/agents/<agent_id>" \
+curl -s -X GET "https://taskglory.com/api/superadmin/agents/<agent_id>" \
   -H "Authorization: Bearer tgpat_xxx" \
   | python3 -m json.tool
 ```
@@ -107,7 +107,7 @@ Cek field `skills_config`.
 ## Uninstall Skill
 
 ```bash
-curl -s -X DELETE "https://dev.taskglory.com/api/superadmin/agents/<agent_id>/skills/<skill_id>" \
+curl -s -X DELETE "https://taskglory.com/api/superadmin/agents/<agent_id>/skills/<skill_id>" \
   -H "Authorization: Bearer tgpat_xxx"
 ```
 
