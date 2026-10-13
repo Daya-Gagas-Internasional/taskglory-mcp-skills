@@ -1,7 +1,7 @@
 ---
 name: chat-reply
-description: Auto-reply comment, chat & thread di TaskGlory. SSE listener → Hermes CLI (PTY) → MCP tools. Real-time, tanpa queue/cron.
-version: 2.0.0
+description: Auto-reply comment, chat & thread di TaskGlory. SSE listener → Hermes CLI → MCP tools. Real-time, tanpa queue/cron.
+version: 2.1.0
 author: awan
 ---
 
@@ -9,7 +9,7 @@ author: awan
 
 Auto-reply comment, channel message, dan DM berdasarkan SSE events dari TaskGlory. Real-time: saat event masuk, listener langsung spawn Hermes → MCP tools → reply terkirim.
 
-## Arsitektur (v2.0)
+## Arsitektur (v2.1)
 
 ```
 User comment/message/mention
@@ -20,7 +20,7 @@ SSE stream (/api/mcp/sse)
     ↓
 Python listener (taskglory_sse_listener.py) — bg process / launchd
     ↓
-Spawn `hermes chat --cli` via PTY (MCP tools loaded)
+Jalankan `hermes chat -Q --oneshot --query-file <tmp>` (MCP tools loaded)
     ↓
 Hermes baca task/comments + generate reply via MCP tools
     ↓
@@ -75,15 +75,16 @@ cp scripts/taskglory_sse_listener.py ~/.hermes/scripts/
 chmod +x ~/.hermes/scripts/taskglory_sse_listener.py
 ```
 
-### 2. Update hermes path di listener
+### 2. Hermes path (biasanya otomatis)
 
-Edit `~/.hermes/scripts/taskglory_sse_listener.py`, cari baris:
+Listener auto-resolve urutan: `HERMES_BIN` env var → `shutil.which("hermes")` → `~/.local/bin/hermes`.
+Override hanya jika hermes ada di lokasi non-standar:
 
-```python
-HERMES_BIN = os.environ.get("HERMES_BIN", "/Users/awan/.local/bin/hermes")
+```bash
+export HERMES_BIN=/path/to/hermes
 ```
 
-Ganti path sesuai output `which hermes` di mesin kamu.
+Untuk launchd/systemd, set lewat service file (setup.sh sudah handle).
 
 ### 3. Start listener
 
@@ -192,7 +193,7 @@ systemctl --user enable --now taskglory-sse
 
 1. SSE event `comment_created` atau `task_mention` masuk
 2. Listener parse: task_id, comment_id, author_name, content_preview
-3. Listener spawn Hermes CLI via PTY dengan prompt berisi event detail
+3. Listener tulis prompt ke temp file, jalankan `hermes chat -Q --oneshot --query-file <tmp>`
 4. Hermes baca task detail: `task_get(task_id=...)`
 5. Hermes baca comments: `task_comments(task_id=...)`
 6. Hermes generate reply berdasarkan konten + agent persona
@@ -240,22 +241,34 @@ Hermes CLI akan baca persona ini dari system prompt + memory.
 
 ## Pitfalls
 
-1. **One-shot mode tidak load MCP** — `hermes -z` hanya load built-in tools. WAJIB pakai `hermes chat --cli` via PTY. Listener handle ini otomatis.
+1. **JANGAN pakai PTY + paste prompt ke TUI** — mengirim prompt multi-line ke PTY `hermes chat --cli` membuat TUI mendeteksinya sebagai PASTE (log: `Collapsed paste #N: 16 lines`); newline masuk ke buffer dan prompt TIDAK pernah ter-submit. Agent idle sampai SIGKILL (`exit=-9`), `Output tail` cuma echo prompt, dan `agent.log` tidak punya satu pun `API call #1`/`turn_context` untuk sesi itu. Menaikkan timeout tidak menolong. Pakai `-Q --oneshot --query-file <tmpfile>` (non-interaktif) — MCP tools tetap load penuh. Ini BEDA dari `hermes -z` yang memang hanya built-in tools.
 2. **Hermes path di launchd** — launchd tidak load shell profile (`.zshrc`/`.bashrc`), jadi `hermes` tidak ada di PATH. WAJIB pakai full path (mis. `/Users/awan/.local/bin/hermes`). Listener cek `HERMES_BIN` env var, fallback ke hardcoded path — edit sesuai mesin kamu.
-3. **MCP connect time** — butuh ~9s (4s Hermes boot + 5s MCP register) sebelum prompt dikirim. Listener handle ini otomatis.
+3. **`--query-file` untuk teks arbitrer** — jangan interpolasi konten komentar ke argv/shell: quote, backtick, dan `$(...)` bisa ter-interpret. Temp file menghindari semua itu sekaligus batas panjang argumen.
 4. **Token 401** — pastikan pakai token dari `~/.hermes/config.yaml`. Token lama mungkin expired. Regenerate dari TaskGlory web jika perlu.
 5. **Agent self-comment tidak trigger SSE** — backend filter event dari agent sendiri. Test harus pakai comment dari user lain.
 6. **Dedupe** — `comment_created` + `task_mention` bisa punya `comment_id` sama. Listener skip duplicate via `sse_processed_ids.txt`.
-7. **PTY required** — `hermes chat --cli` butuh TTY. Tanpa PTY, MCP tools tidak load. Listener pakai `pty.openpty()`.
+7. **Jangan percaya log listener sebagai bukti reply terkirim** — baris `[SSE] Auto-reply completed` hanya menandai handler selesai. Ground truth cuma `task_comments(task_id=...)` → harus ada komentar `is_agent: true`. Indikasi benar di log: `exit=0` + output tail berisi comment id.
 8. **Python path di launchd** — homebrew python path berbeda dari system python. Cek: `which python3` di terminal, pakai path itu di plist.
-9. **Event timeout** — listener max 180s per event. Jika Hermes lambat, event berikutnya menunggu. Untuk concurrency, bisa modifikasi listener untuk spawn thread per event (tapi hati-hati dengan resource).
+9. **Event timeout** — listener max 480s per event (override: `TG_REPLY_TIMEOUT` env var). Jika Hermes lambat, event berikutnya menunggu. Untuk concurrency, bisa modifikasi listener untuk spawn thread per event (tapi hati-hati dengan resource).
 
 ## Verify
 
 1. Listener running: `launchctl list | grep taskglory-sse` (macOS) atau `systemctl --user status taskglory-sse` (Linux)
 2. SSE connected: `tail ~/.hermes/scripts/sse_listener.log` — harus ada "Connected. Status=200"
-3. Test: minta user lain comment/mention agent di task → cek log muncul "Event received" → "Auto-reply completed"
-4. Cek reply: buka task di web TaskGlory, agent harus ada reply comment
+3. Test: minta user lain comment/mention agent di task → cek log muncul "Event received" → `exit=0`
+4. Cek reply (WAJIB, jangan skip): `task_comments(task_id=...)` via MCP, atau buka task di web TaskGlory — harus ada komentar dari agent
+
+Test tanpa menunggu event baru — replay event lewat import langsung:
+```bash
+cd ~/.hermes/scripts && python3 -c "
+import sys; sys.argv=['x','dummy']
+import importlib.util
+spec = importlib.util.spec_from_file_location('l','taskglory_sse_listener.py')
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+p = m.build_prompt('comment_created', {'task_id':'...','task_code':'...','comment_id':'...','author_name':'...','content_preview':'...'})
+m.trigger_hermes(p)"
+```
+Reply normal selesai ~25s dengan `exit=0`.
 
 ## Troubleshooting
 
@@ -263,7 +276,10 @@ Hermes CLI akan baca persona ini dari system prompt + memory.
 |---------|-----|-----|
 | 401 Unauthorized | Token expired | Regenerate PAT, update listener + config.yaml |
 | `No such file or directory: 'hermes'` | Hermes path salah | Update `HERMES_BIN` di listener atau plist |
-| MCP tools not loaded | Hermes one-shot mode | Pastikan pakai `hermes chat --cli` via PTY, bukan `hermes -z` |
+| MCP tools not loaded | Mode `hermes -z` | Pakai `chat -Q --oneshot --query-file`, bukan `hermes -z` |
+| `exit=-9`, output tail cuma echo prompt | Prompt ter-paste ke TUI, tidak ter-submit | Jangan pakai PTY `chat --cli`; pakai `--query-file` (Pitfall #1) |
+| Log bilang "completed" tapi reply tidak ada | Salah baca log | Verifikasi via `task_comments`, cek `is_agent: true` |
+| Token dev 401 di prod | PAT environment-specific | Generate PAT baru di host target; update config.yaml + plist/service |
 | No events received | SSE connection | Cek network, cek agent punya akses ke task/channel |
 | Duplicate replies | Dedupe file | Cek `sse_processed_ids.txt`, hapus jika perlu re-process |
 | Listener crash | launchd log | Cek `sse_listener_stderr.log`, `launchctl list` untuk exit code |

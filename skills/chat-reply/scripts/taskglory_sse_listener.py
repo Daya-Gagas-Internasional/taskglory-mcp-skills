@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""TaskGlory SSE Listener — real-time auto-reply via Hermes CLI (PTY mode).
+"""TaskGlory SSE Listener — real-time auto-reply via Hermes CLI (non-interactive).
 
-SSE event masuk → spawn `hermes chat --cli` via PTY → Hermes proses dengan MCP tools → auto-reply ke TaskGlory.
+SSE event masuk → jalankan `hermes chat -Q --oneshot --query-file` → Hermes proses dengan MCP tools → auto-reply ke TaskGlory.
 Tanpa queue file, tanpa cron. Real-time.
 
 Usage:
@@ -13,7 +13,7 @@ Environment variables:
 
 Requires:
     - Hermes Agent installed, MCP taskglory configured & enabled
-    - Python 3.10+ (uses pty, select, fcntl — Unix only)
+    - Python 3.10+
 
 Setup:
     1. Get token: grep -o 'tgpat_[a-f0-9]*' ~/.hermes/config.yaml
@@ -27,11 +27,9 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.request
-import pty
-import select
-import fcntl
 from datetime import datetime, timezone
 
 BASE_URL = os.environ.get("TG_BASE_URL", "https://taskglory.com")
@@ -170,124 +168,51 @@ def build_prompt(event_type, data):
 
 
 def trigger_hermes(prompt):
-    """Spawn hermes chat --cli via PTY, send prompt, wait for completion."""
-    log(f"[HERMES] Spawning {HERMES_BIN} chat --cli for auto-reply...")
+    """Run hermes chat -Q --oneshot --query-file (non-interactive, no TUI/paste issues).
 
+    JANGAN kembali ke PTY + paste prompt ke `hermes chat --cli`: TUI mendeteksi prompt
+    multi-line sebagai PASTE, newline masuk ke buffer dan prompt tidak pernah ter-submit,
+    sehingga agent idle sampai SIGKILL (exit=-9) tanpa satu pun API call.
+    """
+    log(f"[HERMES] Running {HERMES_BIN} chat --query-file for auto-reply...")
+
+    TIMEOUT = int(os.environ.get("TG_REPLY_TIMEOUT", "480"))  # 8 minutes max per event
+
+    tmp_path = None
     try:
-        # Create PTY
-        master_fd, slave_fd = pty.openpty()
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as tf:
+            tf.write(prompt)
+            tmp_path = tf.name
 
-        # Set non-blocking on master
-        flags = fcntl.fcntl(master_fd, fcntl.F_GETFL)
-        fcntl.fcntl(master_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
-
-        proc = subprocess.Popen(
-            [HERMES_BIN, "chat", "--cli", "-Q", "--yolo", "--max-turns", "20"],
-            stdin=slave_fd,
-            stdout=slave_fd,
-            stderr=slave_fd,
-            close_fds=True,
-        )
-
-        os.close(slave_fd)
-
-        # Phase 1: Wait for Hermes ready signal (Welcome text or prompt box)
         start = time.time()
-        ready = False
-        boot_output = b""
-
-        while time.time() - start < 30:
-            try:
-                r, _, _ = select.select([master_fd], [], [], 1.0)
-                if r:
-                    try:
-                        chunk = os.read(master_fd, 4096)
-                        if chunk:
-                            boot_output += chunk
-                            decoded = chunk.decode("utf-8", errors="replace")
-                            if "Welcome" in decoded or "❯" in decoded:
-                                ready = True
-                                break
-                        else:
-                            break
-                    except OSError:
-                        break
-            except (OSError, select.error):
-                break
-
-        if not ready:
-            log(f"[HERMES] Ready signal not found after {time.time()-start:.1f}s, sending anyway...")
-        else:
-            log(f"[HERMES] Ready at {time.time()-start:.1f}s, waiting for MCP...")
-
-        # Extra wait for MCP tools to fully register
-        time.sleep(5)
-
-        # Phase 2: Send prompt
-        prompt_bytes = (prompt + "\n").encode("utf-8")
-        os.write(master_fd, prompt_bytes)
-        log(f"[HERMES] Prompt sent ({len(prompt)} chars) at {time.time()-start:.1f}s")
-
-        # Phase 3: Wait for response
-        output = boot_output
-        TIMEOUT = 180  # 3 minutes max per event
-
-        while time.time() - start < TIMEOUT:
-            try:
-                ready, _, _ = select.select([master_fd], [], [], 2.0)
-                if ready:
-                    try:
-                        chunk = os.read(master_fd, 4096)
-                        if chunk:
-                            output += chunk
-                        else:
-                            break
-                    except OSError:
-                        break
-            except (OSError, select.error):
-                break
-
-            # Check if process ended
-            if proc.poll() is not None:
-                try:
-                    while True:
-                        chunk = os.read(master_fd, 4096)
-                        if not chunk:
-                            break
-                        output += chunk
-                except OSError:
-                    pass
-                break
-
-        # Send /exit
-        try:
-            os.write(master_fd, b"/exit\n")
-        except OSError:
-            pass
-
-        # Wait for process to end
-        try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
-
-        os.close(master_fd)
-
+        proc = subprocess.run(
+            [HERMES_BIN, "chat", "-Q", "--oneshot", "--query-file", tmp_path, "--yolo", "--max-turns", "20"],
+            capture_output=True,
+            text=True,
+            timeout=TIMEOUT,
+        )
         elapsed = time.time() - start
-        output_str = output.decode("utf-8", errors="replace")
         log(f"[HERMES] Done in {elapsed:.1f}s, exit={proc.returncode}")
 
-        # Log last 500 chars for debugging
+        output_str = (proc.stdout or "") + (proc.stderr or "")
         if output_str:
             tail = output_str[-500:] if len(output_str) > 500 else output_str
             log(f"[HERMES] Output tail: {tail}")
 
-        return True
+        return proc.returncode == 0
 
+    except subprocess.TimeoutExpired:
+        log(f"[HERMES] Timed out after {TIMEOUT}s")
+        return False
     except Exception as e:
         log(f"[HERMES] Error: {e}")
         return False
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
 
 def handle_event(event_type, data):
