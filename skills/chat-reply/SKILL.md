@@ -196,8 +196,8 @@ systemctl --user enable --now taskglory-sse
 3. Listener tulis prompt ke temp file, jalankan `hermes chat -Q --oneshot --query-file <tmp>`
 4. Hermes baca task detail: `task_get(task_id=...)`
 5. Hermes baca comments: `task_comments(task_id=...)`
-6. Hermes generate reply berdasarkan konten + agent persona
-7. Hermes kirim: `task_comment_add(task_id=..., body="...", mentions=[author_id])`
+6. Hermes KLASIFIKASI komentar: sapaan/pertanyaan simpel → balas concise; permintaan artefak/deliverable (dokumen, PDF, laporan, analisis) → buat file-nya + upload via `file_upload`/`file_upload_url` SEBELUM membalas, dilarang balas "akan saya buatkan" tanpa langsung mengeksekusi (sesi one-shot, tidak ada continuity)
+7. Hermes kirim: `task_comment_add(task_id=..., body="...", mentions=[author_id])` — body jujur soal apa yang SUDAH dikerjakan, bukan sekadar rencana
 
 ### Reply Channel Message
 
@@ -241,6 +241,7 @@ Hermes CLI akan baca persona ini dari system prompt + memory.
 
 ## Pitfalls
 
+0. **Janji kosong di deliverable request (CRITICAL)** — prompt lama hanya menyuruh "Generate reply yang relevan" + "concise" + "jangan lakukan hal lain", tanpa pernah menyebut `file_upload`. Akibatnya setiap permintaan artefak (mis. "buatkan PDF opsi flow") dibalas "siap, akan saya susun" dan file-nya TIDAK PERNAH ada — sesi one-shot mati setelah reply, tidak ada continuity ke sesi berikutnya. `build_prompt` wajib memuat langkah klasifikasi: sapaan simpel → balas concise; permintaan artefak → buat file + upload via `mcp__taskglory__file_upload`/`file_upload_url` DULU, baru balas dengan hasilnya; kalau scope kebesaran → balas jujur dengan progress nyata + estimasi, bukan komitmen kosong. Verifikasi: `task_comments` harus punya `attachments` non-empty, bukan sekadar komentar berjanji.
 1. **JANGAN pakai PTY + paste prompt ke TUI** — mengirim prompt multi-line ke PTY `hermes chat --cli` membuat TUI mendeteksinya sebagai PASTE (log: `Collapsed paste #N: 16 lines`); newline masuk ke buffer dan prompt TIDAK pernah ter-submit. Agent idle sampai SIGKILL (`exit=-9`), `Output tail` cuma echo prompt, dan `agent.log` tidak punya satu pun `API call #1`/`turn_context` untuk sesi itu. Menaikkan timeout tidak menolong. Pakai `-Q --oneshot --query-file <tmpfile>` (non-interaktif) — MCP tools tetap load penuh. Ini BEDA dari `hermes -z` yang memang hanya built-in tools.
 2. **Hermes path di launchd** — launchd tidak load shell profile (`.zshrc`/`.bashrc`), jadi `hermes` tidak ada di PATH. WAJIB pakai full path (mis. `/Users/awan/.local/bin/hermes`). Listener cek `HERMES_BIN` env var, fallback ke hardcoded path — edit sesuai mesin kamu.
 3. **`--query-file` untuk teks arbitrer** — jangan interpolasi konten komentar ke argv/shell: quote, backtick, dan `$(...)` bisa ter-interpret. Temp file menghindari semua itu sekaligus batas panjang argumen.
@@ -249,7 +250,7 @@ Hermes CLI akan baca persona ini dari system prompt + memory.
 6. **Dedupe** — `comment_created` + `task_mention` bisa punya `comment_id` sama. Listener skip duplicate via `sse_processed_ids.txt`.
 7. **Jangan percaya log listener sebagai bukti reply terkirim** — baris `[SSE] Auto-reply completed` hanya menandai handler selesai. Ground truth cuma `task_comments(task_id=...)` → harus ada komentar `is_agent: true`. Indikasi benar di log: `exit=0` + output tail berisi comment id.
 8. **Python path di launchd** — homebrew python path berbeda dari system python. Cek: `which python3` di terminal, pakai path itu di plist.
-9. **Event timeout** — listener max 480s per event (override: `TG_REPLY_TIMEOUT` env var). Jika Hermes lambat, event berikutnya menunggu. Untuk concurrency, bisa modifikasi listener untuk spawn thread per event (tapi hati-hati dengan resource).
+9. **Event timeout** — listener default 600s per event (override: `TG_REPLY_TIMEOUT` env var), max-turns 40. Dinaikkan dari 480s/20 turns supaya sesi deliverable (generate dokumen + upload) punya ruang eksekusi penuh. Jika Hermes lambat, event berikutnya menunggu. Untuk concurrency, bisa modifikasi listener untuk spawn thread per event (tapi hati-hati dengan resource).
 
 ## Verify
 

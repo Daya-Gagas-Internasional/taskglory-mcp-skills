@@ -103,10 +103,16 @@ def build_prompt(event_type, data):
             f"1. Baca task detail via mcp__taskglory__task_get(task_id=\"{task_id}\")\n"
             f"2. Baca comments via mcp__taskglory__task_comments(task_id=\"{task_id}\")\n"
             f"3. Pahami konteks task + comment author\n"
-            f"4. Generate reply yang relevan dan helpful\n"
+            f"4. KLASIFIKASI dulu:\n"
+            f"   a. Sapaan/pertanyaan simpel (halo, status, estimasi) -> balas singkat langsung, lanjut step 6.\n"
+            f"   b. Permintaan ARTEFAK/deliverable (dokumen, PDF, laporan, analisis tertulis) -> JANGAN cuma bilang 'akan saya buatkan'.\n"
+            f"      WAJIB kerjakan TUNTAS dalam sesi ini sebelum membalas: buat file-nya, lalu upload via mcp__taskglory__file_upload\n"
+            f"      atau file_upload_url terkait task_id ini, baru balas dengan hasil/link filenya.\n"
+            f"      Kalau scope terlalu besar untuk sesi ini (butuh riset panjang), JANGAN janji kosong 'akan saya kirim' -\n"
+            f"      balas jujur dengan breakdown progress nyata dan estimasi, bukan komitmen yang tidak langsung dieksekusi.\n"
             f"5. Kirim reply via mcp__taskglory__task_comment_add(task_id=\"{task_id}\", body=\"...\", mentions=[])\n"
-            f"6. Reply harus concise, professional, dalam Bahasa Indonesia\n"
-            f"7. Setelah reply terkirim, selesai. Jangan lakukan hal lain.\n"
+            f"6. Reply jujur soal apa yang SUDAH dilakukan (bukan sekadar rencana), professional, Bahasa Indonesia. Kasus 4a boleh concise; kasus 4b jangan janji kosong.\n"
+            f"7. Setelah reply terkirim (dan file terupload jika relevan), selesai. Jangan lakukan hal lain.\n"
         )
 
     elif event_type in ("channel_message", "mentioned"):
@@ -176,7 +182,7 @@ def trigger_hermes(prompt):
     """
     log(f"[HERMES] Running {HERMES_BIN} chat --query-file for auto-reply...")
 
-    TIMEOUT = int(os.environ.get("TG_REPLY_TIMEOUT", "480"))  # 8 minutes max per event
+    TIMEOUT = int(os.environ.get("TG_REPLY_TIMEOUT", "600"))  # 10 min max per event (allow room for deliverable gen+upload)
 
     tmp_path = None
     try:
@@ -186,7 +192,7 @@ def trigger_hermes(prompt):
 
         start = time.time()
         proc = subprocess.run(
-            [HERMES_BIN, "chat", "-Q", "--oneshot", "--query-file", tmp_path, "--yolo", "--max-turns", "20"],
+            [HERMES_BIN, "chat", "-Q", "--oneshot", "--query-file", tmp_path, "--yolo", "--max-turns", "40"],
             capture_output=True,
             text=True,
             timeout=TIMEOUT,
